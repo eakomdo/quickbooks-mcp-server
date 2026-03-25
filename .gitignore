@@ -1,0 +1,21 @@
+.qodo
+
+# Go binaries
+qbo-mcp
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Misc
+.python-version
