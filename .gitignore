@@ -2,10 +2,13 @@
 
 # Go binaries
 qbo-mcp
+qbo-mcp-linux
+qbo-mcp-windows.exe
 
 # Environment
 .env
 .env.local
+.env.test
 
 # IDE
 .vscode/
