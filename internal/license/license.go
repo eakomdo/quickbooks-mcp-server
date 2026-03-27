@@ -135,7 +135,7 @@ func Watcher(cfg *config.Config, intervalSeconds int, maxFailures int) {
 			log.Printf("License check failed %d times.", failureCount)
 			if failureCount >= maxFailures {
 				log.Println("Max failures reached. Shutting down...")
-				os.Exit(1)
+				os.Exit(1
 			}
 		}
 	}
