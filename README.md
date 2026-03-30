@@ -29,7 +29,7 @@ PORT=3000 ./qbo-mcp
 
 ## Configuration
 
-Set environment variables in a `.env` file or export them:
+Set environment variables in a `.env` file or export them. In single-tenant mode, the server will actively prompt you for missing QuickBooks credentials at startup if they are not provided:
 
 ```env
 # QuickBooks API credentials

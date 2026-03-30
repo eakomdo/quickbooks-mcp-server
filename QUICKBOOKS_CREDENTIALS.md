@@ -56,7 +56,10 @@ If you don't have these yet, you need to authenticate:
 
 ## Where to Store Credentials
 
-### Option A: Environment File (Recommended for Testing)
+### Option A: Interactive Prompt (Easiest for Local Use)
+If you run `./qbo-mcp` without providing these variables in the environment, the server will automatically prompt you for your `Client ID`, `Client Secret`, `Realm ID`, and `Refresh Token` at startup.
+
+### Option B: Environment File (Recommended for Testing)
 Create `.env` file in `/home/emma/Downloads/quickbooks-online-mcp/`:
 
 ```env

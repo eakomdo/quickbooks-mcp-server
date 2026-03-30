@@ -16,11 +16,20 @@ import (
 	"github.com/qboapi/qbo-mcp-server/internal/config"
 )
 
+var ccTokenCache = struct {
+	sync.RWMutex
+	token     string
+	expiresAt time.Time
+}{}
+
 const minorVersion = "75"
 
 type ctxKey int
 
-const userBearerCtxKey ctxKey = 1
+const (
+	userBearerCtxKey ctxKey = 1
+	personaIDCtxKey  ctxKey = 2
+)
 
 // WithUserBearer stores the end-user Bearer token (platform mode) on the context.
 func WithUserBearer(ctx context.Context, token string) context.Context {
@@ -29,6 +38,16 @@ func WithUserBearer(ctx context.Context, token string) context.Context {
 
 func userBearerFrom(ctx context.Context) string {
 	v, _ := ctx.Value(userBearerCtxKey).(string)
+	return v
+}
+
+// WithPersonaID stores the Persona-Id header value on the context.
+func WithPersonaID(ctx context.Context, personaID string) context.Context {
+	return context.WithValue(ctx, personaIDCtxKey, strings.TrimSpace(personaID))
+}
+
+func personaIDFrom(ctx context.Context) string {
+	v, _ := ctx.Value(personaIDCtxKey).(string)
 	return v
 }
 
@@ -74,20 +93,111 @@ func NewClient(cfg *config.Config) *Client {
 	}
 }
 
+// loginAccountService logs into the Account Service using CLIENT_ID + CLIENT_SECRET
+// to obtain a machine Bearer token via client_credentials grant.
+func (c *Client) loginAccountService(ctx context.Context) (string, error) {
+	ccTokenCache.RLock()
+	token := ccTokenCache.token
+	expiresAt := ccTokenCache.expiresAt
+	ccTokenCache.RUnlock()
+
+	// Return cached token if still valid (with 30s safety margin)
+	if token != "" && !expiresAt.IsZero() && time.Until(expiresAt) > 30*time.Second {
+		return token, nil
+	}
+
+	if c.cfg.AccountServiceURL == "" {
+		return "", fmt.Errorf("ACCOUNT_SERVICE_URL not configured")
+	}
+	if c.cfg.PISClientID == "" || c.cfg.PISClientSecret == "" {
+		return "", fmt.Errorf("CLIENT_ID and CLIENT_SECRET must be set for persona-based auth")
+	}
+
+	loginURL := strings.TrimRight(c.cfg.AccountServiceURL, "/") + "/api/v2/auth/login"
+	form := url.Values{}
+	form.Set("grant_type", "client_credentials")
+	form.Set("client_id", c.cfg.PISClientID)
+	form.Set("client_secret", c.cfg.PISClientSecret)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, loginURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("account service login failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("account service login failed: %s %s", resp.Status, string(body))
+	}
+
+	var res struct {
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int64  `json:"expires_in"` // optional, seconds
+	}
+	if err := json.Unmarshal(body, &res); err != nil {
+		return "", fmt.Errorf("decode account service login response: %w", err)
+	}
+	if res.AccessToken == "" {
+		return "", fmt.Errorf("account service returned empty access_token")
+	}
+
+	// Calculate expiry
+	var newExpiresAt time.Time
+	if res.ExpiresIn > 0 {
+		newExpiresAt = time.Now().Add(time.Duration(res.ExpiresIn) * time.Second)
+	} else {
+		// Default to 10 minutes if no expiry information is returned.
+		newExpiresAt = time.Now().Add(10 * time.Minute)
+	}
+
+	ccTokenCache.Lock()
+	ccTokenCache.token = res.AccessToken
+	ccTokenCache.expiresAt = newExpiresAt
+	ccTokenCache.Unlock()
+
+	return res.AccessToken, nil
+}
+
 func (c *Client) loadPlatformProject(ctx context.Context) error {
 	if c.cfg.PlatformIntURL == "" {
 		return fmt.Errorf("PLATFORM_INT_URL not configured")
 	}
-	tok := userBearerFrom(ctx)
-	if tok == "" {
-		return fmt.Errorf("no Authorization token found; provide a Bearer token in the request")
+
+	// Determine which token and headers to use
+	var bearerToken string
+	personaID := personaIDFrom(ctx)
+
+	if personaID != "" {
+		// Flow 1: Persona-based — login to Account Service for a machine token
+		machineToken, err := c.loginAccountService(ctx)
+		if err != nil {
+			return fmt.Errorf("persona auth failed: %w", err)
+		}
+		bearerToken = machineToken
+	} else {
+		// Flow 2: Direct — forward the user's Bearer token
+		bearerToken = userBearerFrom(ctx)
+		if bearerToken == "" {
+			return fmt.Errorf("no Authorization token found; provide a Bearer token in the request")
+		}
 	}
+
 	u := c.cfg.PlatformIntURL + "/api/v1/quickbooks_projects?limit=1"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Authorization", "Bearer "+bearerToken)
+	if personaID != "" {
+		req.Header.Set(c.cfg.PersonaIDHeader, personaID)
+	}
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("platform integration unreachable: %w", err)

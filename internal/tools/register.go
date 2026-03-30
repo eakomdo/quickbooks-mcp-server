@@ -11,13 +11,16 @@ import (
 )
 
 // RegisterAll registers the same QuickBooks tools as the TypeScript server (see src/index.ts).
-func RegisterAll(s *mcp.Server, cfg *config.Config, userBearer string) {
+func RegisterAll(s *mcp.Server, cfg *config.Config, userBearer string, personaID string) {
 	schema := json.RawMessage(`{"type":"object","properties":{"params":{"type":"object","description":"Tool parameters (mirrors TS zod schemas in src/tools)"}},"required":["params"]}`)
 	ub := userBearer
 
 	add := func(name, desc string, run func(context.Context, map[string]any) (*mcp.CallToolResult, error)) {
 		s.AddTool(&mcp.Tool{Name: name, Description: desc, InputSchema: schema}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx = qbo.WithUserBearer(ctx, ub)
+			if personaID != "" {
+				ctx = qbo.WithPersonaID(ctx, personaID)
+			}
 			var top map[string]any
 			if err := json.Unmarshal(req.Params.Arguments, &top); err != nil {
 				return errResult(fmt.Sprintf("invalid arguments: %v", err)), nil

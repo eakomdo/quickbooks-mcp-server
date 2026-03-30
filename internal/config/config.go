@@ -16,7 +16,9 @@ type Config struct {
 	QuickBooksRealmID      string
 	QuickBooksEnvironment  string // "sandbox" or "production"
 
-	PlatformIntURL string
+	PlatformIntURL  string
+	PISClientID     string
+	PISClientSecret string
 
 	EnforceAuth bool
 
@@ -34,9 +36,10 @@ type Config struct {
 	LicenseKey                  string
 
 	HTTPPort   string
-	HTTPPath   string
-	DeviceID   string
+	HTTPPath    string
+	DeviceID    string
 	RedirectURI string
+	PersonaIDHeader string
 }
 
 func Load() (*Config, error) {
@@ -49,7 +52,9 @@ func Load() (*Config, error) {
 		QuickBooksRealmID:      os.Getenv("QUICKBOOKS_REALM_ID"),
 		QuickBooksEnvironment:  strings.ToLower(strings.TrimSpace(getenvDefault("QUICKBOOKS_ENVIRONMENT", "sandbox"))),
 
-		PlatformIntURL: strings.TrimRight(os.Getenv("PLATFORM_INT_URL"), "/"),
+		PlatformIntURL:  strings.TrimRight(getenvDefault("PLATFORM_INTEGRATION_SERVICE", os.Getenv("PLATFORM_INT_URL")), "/"),
+		PISClientID:     os.Getenv("CLIENT_ID"),
+		PISClientSecret: os.Getenv("CLIENT_SECRET"),
 
 		EnforceAuth: strings.EqualFold(os.Getenv("ENFORCE_AUTH"), "true"),
 
@@ -70,6 +75,7 @@ func Load() (*Config, error) {
 		HTTPPath:   getenvDefault("MCP_HTTP_PATH", "/mcp"),
 		DeviceID:   os.Getenv("DEVICE_ID"),
 		RedirectURI: getenvDefault("QUICKBOOKS_REDIRECT_URI", "http://localhost:8000/callback"),
+		PersonaIDHeader: getenvDefault("PERSONA_ID_HEADER", "Persona-Id"),
 	}
 	return cfg, nil
 }
