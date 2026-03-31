@@ -258,7 +258,7 @@ func (c *Client) Authenticate(ctx context.Context) error {
 
 	if c.cfg.UsePlatformIntegration() {
 		if err := c.loadPlatformProject(ctx); err != nil {
-			return er
+			return err
 		}
 	} else {
 		if c.clientID == "" || c.clientSecret == "" {
